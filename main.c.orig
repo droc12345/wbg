@@ -46,7 +46,6 @@ int info = 0;
 int exit_code = EXIT_SUCCESS;
 int sig_fd = -1;
 char *files_img[1024];
-char *use_this_output_name = NULL;
 
 static bool have_xrgb8888 = false;
 
@@ -76,12 +75,6 @@ static tll(struct output) outputs;
 static void
 render(struct output *output)
 {
-    /* only output to specify monitor or NOOP - if output is set on cmdline */
-    if (use_this_output_name &&
-        ((strcmp(output->model, use_this_output_name) != 0) && 
-         (strcmp(output->model, "noop") != 0)))
-        return;
-
     const int width = output->render_width;
     const int height = output->render_height;
     const int scale = output->scale;
@@ -119,10 +112,9 @@ render(struct output *output)
     pixman_image_unref(pix);
 
     if (info) 
-        LOG_INFO("render: %dx%d (scaled from %dx%d) to output %s, %s",
+        LOG_INFO("render: %dx%d (scaled from %dx%d)",
                  width * scale, height * scale,
-                 img_width, img_height,
-                 output->make, output->model);
+                 img_width, img_height);
 
     wl_surface_set_buffer_scale(output->surf, scale);
     wl_surface_attach(output->surf, buf->wl_buf, 0, 0);
@@ -201,7 +193,7 @@ output_done(void *data, struct wl_output *wl_output)
     const int scale = output->scale;
 
     if (info)
-        LOG_INFO("output: %s, %s (%dx%d, scale=%d)",
+        LOG_INFO("output: %s %s (%dx%d, scale=%d)",
                  output->make, output->model, width, height, scale);
 }
 
@@ -333,7 +325,7 @@ handle_global_remove(void *data, struct wl_registry *registry, uint32_t name)
 {
     tll_foreach(outputs, it) {
         if (it->item.wl_name == name) {
-            LOG_DBG("destroyed:  %s, %s", it->item.make, it->item.model);
+            LOG_DBG("destroyed: %s %s", it->item.make, it->item.model);
             output_destroy(&it->item);
             tll_remove(outputs, it);
             return;
@@ -376,7 +368,6 @@ display_init() {
         LOG_ERR("no layer shell interface");
         return 1;
     }
-
 
     tll_foreach(outputs, it)
         add_surface_to_output(&it->item);
@@ -426,9 +417,9 @@ exit_close() {
 }
 
 int 
-a_strcmp(const void* a, const void* b)
+a_strcmp( const void* a, const void* b )
 {
-    return strcmp(*(const char**)a, *(const char**)b);
+    return strcmp( *(const char**)a, *(const char**)b );
 }
 
 int
@@ -449,7 +440,7 @@ main(int argc, char *argv[])
     FILE *fp;
 
     opterr = 0;
-    while ((c = getopt (argc, argv, "iro:t:")) != -1)
+    while ((c = getopt (argc, argv, "irt:")) != -1)
         switch (c)
         {
           case 'i':
@@ -458,15 +449,11 @@ main(int argc, char *argv[])
           case 'r':
             random = 1;
             break;
-          case 'o':
-            use_this_output_name = strdup(optarg);
-	    break;
           case 't':
             timer = atoi(optarg);
             break;
           default:
-            fprintf(stderr, "Usage:\n%s [-o name] [-t sec] [-r] [-i] <file/dir name>\n", argv[0]);
-            fprintf(stderr, "        -o output name\n");
+            fprintf(stderr, "Usage:\n%s [-t sec] [-r] [-i] <file/dir name>\n", argv[0]);
             fprintf(stderr, "        -t timer seconds\n");
             fprintf(stderr, "        -r random yes (default no)\n");
             fprintf(stderr, "        -i info -- debugging\n");
@@ -475,7 +462,6 @@ main(int argc, char *argv[])
 
     if (optind >= argc) {
         fprintf(stderr, "Usage:\n%s [-t sec] [-r] [-i] <file/dir name>\n", argv[0]);
-        fprintf(stderr, "        -o output name\n");
         fprintf(stderr, "        -t timer seconds\n");
         fprintf(stderr, "        -r random yes (default no)\n");
         fprintf(stderr, "        -i info -- debugging\n");
@@ -530,11 +516,6 @@ main(int argc, char *argv[])
         }
         rewinddir(d);
 
-        if (n == 0) {
-            fprintf(stderr, "no files in directory %s\n", dir_path);
-            exit(EXIT_FAILURE);
-        }
-
         /* Put file names into the array */
         while((dir = readdir(d)) != NULL) {
             if ( !strcmp(dir->d_name, ".") || !strcmp(dir->d_name, "..") || dir->d_type == DT_DIR ) {
@@ -566,7 +547,7 @@ main(int argc, char *argv[])
                 if (getrandom(&tmp, sizeof(unsigned int), GRND_NONBLOCK) < 0)
                     continue;
 
-                int rndm = (tmp + time(NULL)) % image_cnt;
+                int rndm = tmp % image_cnt;
                 strcat(new_path, files_img[rndm]);
             } else {
                 strcat(new_path, files_img[image_index]);
